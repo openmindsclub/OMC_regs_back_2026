@@ -50,8 +50,10 @@ const registrationSchema = new Schema<RegistrationDocument>(
     },
     department: {
       type: String,
+      required: [true, 'Department is required'],
+      enum: ['IT', 'Design', 'Marketing', 'Multimedia', 'B2B'],
       trim: true,
-      default: '',
+      index: true,
     },
     secondaryDepartment: {
       type: String,
@@ -103,6 +105,7 @@ const registrationSchema = new Schema<RegistrationDocument>(
 );
 
 registrationSchema.index({ firstName: 'text', email: 'text', university: 'text' });
+registrationSchema.index({ department: 1, createdAt: 1 });
 
 export const Registration = mongoose.model<RegistrationDocument>(
   'Registration',

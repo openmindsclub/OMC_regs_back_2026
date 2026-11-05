@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { registrationService } from '../services/registration.service';
 import {
+  DEPARTMENT_AFFINITIES,
+  HunterDepartment,
+} from '../types/registration.types';
+import {
   createRegistrationSchema,
   updateRegistrationStatusSchema,
 } from '../types/registration.schema';
@@ -23,7 +27,7 @@ export class RegistrationController {
 
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { page, limit, search, department, status, university } = req.query;
+      const { page, limit, search, department, status, university, sortBy, sortOrder } = req.query;
 
       const result = await registrationService.getRegistrations({
         page: page ? Number(page) : undefined,
@@ -32,12 +36,28 @@ export class RegistrationController {
         department: typeof department === 'string' ? department : undefined,
         status: typeof status === 'string' ? (status as any) : undefined,
         university: typeof university === 'string' ? university : undefined,
+        sortBy: sortBy === 'department' ? 'department' : 'createdAt',
+        sortOrder: sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : undefined,
       });
 
       res.status(200).json({
         success: true,
         data: result.items,
         pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getByDepartment(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await registrationService.getRegistrationsGroupedByDepartment();
+      res.status(200).json({
+        success: true,
+        data: result.grouped,
+        counts: result.counts,
+        total: result.total,
       });
     } catch (error) {
       next(error);
@@ -104,9 +124,13 @@ export class RegistrationController {
     }
   }
 
-  async exportCsv(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async exportCsv(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const records = await registrationService.getAllForExport();
+      const { department, sortBy } = req.query;
+      const records = await registrationService.getAllForExport({
+        department: typeof department === 'string' ? department : undefined,
+        sortBy: sortBy === 'department' ? 'department' : 'createdAt',
+      });
 
       const headers = [
         'ID',
@@ -119,8 +143,10 @@ export class RegistrationController {
         'Level',
         'University',
         'Department (Path)',
+        'Hunter Affinity',
         'GitHub',
         'LinkedIn',
+        'Portfolio',
         'Status',
         'Submitted At',
       ];
@@ -142,8 +168,12 @@ export class RegistrationController {
         escapeCsv(r.currentLevel),
         escapeCsv(r.university),
         escapeCsv(r.department),
+        escapeCsv(
+          DEPARTMENT_AFFINITIES[r.department as HunterDepartment] || ''
+        ),
         escapeCsv(r.githubUrl),
         escapeCsv(r.linkedinUrl),
+        escapeCsv(r.portfolioUrl),
         escapeCsv(r.status),
         escapeCsv(r.createdAt ? new Date(r.createdAt).toISOString() : ''),
       ]);
@@ -152,10 +182,16 @@ export class RegistrationController {
         '\r\n'
       );
 
+      const filenameSuffix = department
+        ? `_${String(department).toLowerCase()}`
+        : sortBy === 'department'
+        ? '_by_department'
+        : '';
+
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="omc_hunter_registrations_${new Date().toISOString().slice(0, 10)}.csv"`
+        `attachment; filename="omc_hunter_registrations${filenameSuffix}_${new Date().toISOString().slice(0, 10)}.csv"`
       );
       res.status(200).send('\uFEFF' + csvContent);
     } catch (error) {

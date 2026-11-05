@@ -1,6 +1,11 @@
 import { Registration, RegistrationDocument } from '../models/registration.model';
 import { CreateRegistrationDTO } from '../types/registration.schema';
-import { RegistrationQueryFilters, RegistrationStatus } from '../types/registration.types';
+import {
+  HUNTER_DEPARTMENTS,
+  HunterDepartment,
+  RegistrationQueryFilters,
+  RegistrationStatus,
+} from '../types/registration.types';
 
 export class RegistrationService {
   async createRegistration(data: CreateRegistrationDTO): Promise<RegistrationDocument> {
@@ -29,7 +34,7 @@ export class RegistrationService {
     }
 
     if (filters.department) {
-      query.department = { $regex: new RegExp(filters.department, 'i') };
+      query.department = { $regex: new RegExp(`^${filters.department}$`, 'i') };
     }
 
     if (filters.university) {
@@ -48,8 +53,18 @@ export class RegistrationService {
       ];
     }
 
+    // Determine sort options
+    let sortOptions: Record<string, 1 | -1> = { createdAt: -1 };
+    if (filters.sortBy === 'department') {
+      // Sort department by department, and within each department from first registered to last
+      const timeOrder = filters.sortOrder === 'desc' ? -1 : 1;
+      sortOptions = { department: 1, createdAt: timeOrder };
+    } else if (filters.sortOrder) {
+      sortOptions = { createdAt: filters.sortOrder === 'asc' ? 1 : -1 };
+    }
+
     const [items, total] = await Promise.all([
-      Registration.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Registration.find(query).sort(sortOptions).skip(skip).limit(limit),
       Registration.countDocuments(query),
     ]);
 
@@ -61,6 +76,41 @@ export class RegistrationService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async getRegistrationsGroupedByDepartment() {
+    // Sort from first applicant to last within each department
+    const all = await Registration.find().sort({ department: 1, createdAt: 1 });
+
+    const grouped: Record<HunterDepartment, RegistrationDocument[]> = {
+      IT: [],
+      Design: [],
+      Marketing: [],
+      Multimedia: [],
+      B2B: [],
+    };
+
+    const counts: Record<HunterDepartment, number> = {
+      IT: 0,
+      Design: 0,
+      Marketing: 0,
+      Multimedia: 0,
+      B2B: 0,
+    };
+
+    for (const reg of all) {
+      const dep = reg.department as HunterDepartment;
+      if (grouped[dep]) {
+        grouped[dep].push(reg);
+        counts[dep]++;
+      }
+    }
+
+    return {
+      grouped,
+      counts,
+      total: all.length,
     };
   }
 
@@ -81,8 +131,22 @@ export class RegistrationService {
     return await Registration.findByIdAndUpdate(id, updateData, { new: true });
   }
 
-  async getAllForExport(): Promise<RegistrationDocument[]> {
-    return await Registration.find().sort({ createdAt: -1 });
+  async getAllForExport(options?: {
+    department?: string;
+    sortBy?: 'createdAt' | 'department';
+  }): Promise<RegistrationDocument[]> {
+    const query: Record<string, any> = {};
+    if (options?.department) {
+      query.department = { $regex: new RegExp(`^${options.department}$`, 'i') };
+    }
+
+    let sortOptions: Record<string, 1 | -1> = { createdAt: -1 };
+    if (options?.sortBy === 'department') {
+      // Sort dep by dep, and within each dep from first applicant to last
+      sortOptions = { department: 1, createdAt: 1 };
+    }
+
+    return await Registration.find(query).sort(sortOptions);
   }
 
   async getStatistics() {

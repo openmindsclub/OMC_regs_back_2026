@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HUNTER_DEPARTMENTS, HunterDepartment } from './registration.types';
 
 export const RegistrationStatusEnum = z.enum([
   'pending',
@@ -7,6 +8,35 @@ export const RegistrationStatusEnum = z.enum([
   'accepted',
   'rejected',
 ]);
+
+export const hunterDepartmentSchema = z
+  .string()
+  .trim()
+  .min(1, 'Which department would you like to join? (Required)')
+  .superRefine((val, ctx) => {
+    if (/^hr\b/i.test(val)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'HR is part of the Association but is not selectable.',
+      });
+      return;
+    }
+    const matched = HUNTER_DEPARTMENTS.find((dep) =>
+      new RegExp(`^${dep}(\\s|$)`, 'i').test(val)
+    );
+    if (!matched) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid department. Must be one of: ${HUNTER_DEPARTMENTS.join(', ')}`,
+      });
+    }
+  })
+  .transform((val) => {
+    const matched = HUNTER_DEPARTMENTS.find((dep) =>
+      new RegExp(`^${dep}(\\s|$)`, 'i').test(val)
+    );
+    return matched as HunterDepartment;
+  });
 
 const urlOrUsernameSchema = z.string().trim().optional();
 
@@ -41,7 +71,7 @@ export const createRegistrationSchema = z.object({
     .string()
     .trim()
     .min(2, 'University must be at least 2 characters'),
-  department: z.string().trim().optional(),
+  department: hunterDepartmentSchema,
   secondaryDepartment: z.string().trim().optional(),
   pathDetails: z.record(z.string(), z.any()).optional(),
   githubUrl: urlOrUsernameSchema,

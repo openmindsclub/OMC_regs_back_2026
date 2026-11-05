@@ -14,6 +14,10 @@ router.get('/export/csv', requireAdminKey, (req, res, next) =>
   registrationController.exportCsv(req, res, next)
 );
 
+router.get('/by-department', requireAdminKey, (req, res, next) =>
+  registrationController.getByDepartment(req, res, next)
+);
+
 router.get('/', requireAdminKey, (req, res, next) =>
   registrationController.getAll(req, res, next)
 );
